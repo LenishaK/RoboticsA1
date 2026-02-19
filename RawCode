@@ -1,0 +1,314 @@
+**Copy and paste in VEX Vr to see the maze be solved**
+
+
+#region VEXcode Generated Robot Configuration
+import math
+import random
+from vexcode_vr import *
+
+# Brain should be defined by default
+brain=Brain()
+
+drivetrain = Drivetrain("drivetrain", 0)
+pen = Pen("pen", 8)
+pen.set_pen_width(THIN)
+left_bumper = Bumper("leftBumper", 2)
+right_bumper = Bumper("rightBumper", 3)
+front_eye = EyeSensor("frontEye", 4)
+down_eye = EyeSensor("downEye", 5)
+front_distance = Distance("frontdistance", 6)
+distance = front_distance
+magnet = Electromagnet("magnet", 7)
+location = Location("location", 9)
+
+#endregion VEXcode Generated Robot Configuration
+# ------------------------------------------
+# 
+# 	Project:      Mouse in a maze 
+#	Author:       VEX
+#	Created:      18.02.26 
+#	Description:  Assignmnet 1 - robotics 
+#                 Program the mouse to escape the maze using different algorithms 
+# 
+# -------------------------------------------
+#Maze solving robot - tremaux + dijkstra algorithms 
+from vexcode_vr import *
+
+brain = Brain()
+drivetrain = Drivetrain("drivetrain", 0)
+distance = Distance("frontdistance", 6)
+location = Location("location", 9)
+
+def main():
+    STEP = 250           # The robot moves this many MM per move 
+    WALL = 80            # Width of the wall, too close to enter 
+
+    TARGET_X = -100      # co-ords of the end of the maze 
+    TARGET_Y = 900       
+    TOL = 80             # Room for error, for both x and y 
+
+    heading = 0          # The direction of the robot and where its going 
+
+    marks = {}           # counts the direction adn thehlocation of the robots co-ords 
+    path = []
+
+    explored = {}        # explored cells + graph for the shorest path
+    graph = {}
+
+    start_x = int(round(location.position(X, MM) / STEP))
+    start_y = int(round(location.position(Y, MM) / STEP))
+    start = (start_x, start_y)
+
+    goal = None
+
+    while True:
+        cx_mm = location.position(X, MM)
+        cy_mm = location.position(Y, MM)
+
+
+        # Verfies if the robot is at the target 
+        cx = int(round(cx_mm / STEP)) 
+        cy = int(round(cy_mm / STEP))
+        cur_cell = (cx, cy)
+
+        explored[cur_cell] = True
+        if cur_cell not in graph:
+            graph[cur_cell] = []
+            
+        if abs(cx_mm - TARGET_X) <= TOL and abs(cy_mm - TARGET_Y) <= TOL:
+            goal = cur_cell
+            break
+
+        right_dir = (heading + 1) % 4
+        fwd_dir   = heading
+        left_dir  = (heading + 3) % 4
+        back_dir  = (heading + 2) % 4
+
+        best_dir = -1 
+        best_mark = 999
+
+        check_list = [right_dir, fwd_dir, left_dir, back_dir]
+
+        i = 0
+        while i < 4:
+
+            dcheck = check_list[i]
+
+            turn_amount = (dcheck - heading) % 4
+            if turn_amount == 1:
+                drivetrain.turn_for(RIGHT, 90, DEGREES)
+            elif turn_amount == 3:
+                drivetrain.turn_for(LEFT, 90, DEGREES)
+            elif turn_amount == 2:
+                drivetrain.turn_for(RIGHT, 180, DEGREES)
+
+            dist = distance.get_distance(MM)
+            if dist == -1:
+                dist = 9999
+
+            if turn_amount == 1:
+                drivetrain.turn_for(LEFT, 90, DEGREES)
+            elif turn_amount == 3:
+                drivetrain.turn_for(RIGHT, 90, DEGREES)
+            elif turn_amount == 2:
+                drivetrain.turn_for(RIGHT, 180, DEGREES)
+
+            if dist > WALL:
+                m = marks.get((cx, cy, dcheck), 0)
+                if m < best_mark:
+                    best_mark = m
+                    best_dir = dcheck
+
+            i += 1
+
+            
+        if best_dir == -1:
+            break 
+
+        turn_amount = (best_dir - heading) % 4 
+        if turn_amount == 1:
+            drivetrain.turn_for(RIGHT, 90, DEGREES)
+        elif turn_amount == 3:
+            drivetrain.turn_for(LEFT, 90, DEGREES)
+        elif turn_amount == 2:
+            drivetrain.turn_for(RIGHT, 180, DEGREES)
+        
+        heading = best_dir 
+
+        key = (cx, cy, best_dir)
+        marks[key] = marks.get(key, 0) + 1
+
+        prev_cell = cur_cell
+        drivetrain.drive_for(FORWARD, STEP, MM)
+
+        nx = int(round(location.position(X, MM) / STEP))
+        ny = int(round(location.position(Y, MM) / STEP))
+        new_cell = (nx, ny)
+
+        explored[new_cell] = True
+        if new_cell not in graph:
+            graph[new_cell] = []
+        if prev_cell not in graph:
+            graph[prev_cell] = []
+
+        # add edge both ways
+        if new_cell not in graph[prev_cell]:
+            graph[prev_cell].append(new_cell)
+            if prev_cell not in graph[new_cell]:
+                graph[new_cell].append(prev_cell)
+
+
+        opp = (best_dir + 2) % 4
+        key2 = (nx, ny, opp)
+        marks[key2] = marks.get(key2, 0) + 1
+        
+        if len(path) > 0 and best_dir == (path[-1] + 2) % 4:
+            path.pop()
+        else:
+            path.append(best_dir)
+
+        wait(0.02, SECONDS)
+
+    if goal is None:
+        drivetrain.stop()
+        return
+
+
+        #BFS calculates the shortest route
+    parent = {}
+    q = [goal]
+    parent[goal] = None
+
+    while len(q) > 0:
+        u = q.pop(0)
+        for v in graph.get(u, []):
+            if v not in parent:
+                parent[v] = u
+                q.append(v)
+
+    route = {}
+    fastest_back = []
+
+    brain.clear()
+    if start in parent:
+        brain.print("RETURN: BFS")
+    else:
+        brain.print("RETURN: RETRACE")
+    brain.new_line()
+
+    if start in parent:
+
+        path_start_to_goal = []
+        cur = start
+        while cur is not None:
+            path_start_to_goal.append(cur)
+            cur = parent[cur]
+
+        fastest_back = list(reversed(path_start_to_goal))
+
+        i = 0
+        while i < len(fastest_back):
+            route[fastest_back[i]] = True
+            i += 1
+
+
+    #ASCII grid
+    #prevents overflow
+    MAX_ROWS = 18   # number of map lines
+    MAX_COLS = 30   # characters per line
+
+    xs = [p[0] for p in explored]
+    ys = [p[1] for p in explored]
+    minx, maxx = min(xs), max(xs)
+    miny, maxy = min(ys), max(ys)
+
+    brain.print("S=start G=goal *=fastest")
+    brain.new_line()
+
+    row_count = 0
+    y = maxy
+    while y >= miny and row_count < MAX_ROWS:
+
+        line = ""
+        x = minx
+        while x <= maxx and len(line) < MAX_COLS:
+            p = (x, y)
+            ch = " "
+            if p in explored:
+                ch = "."
+            if p in route:
+                ch = "*"
+            if p == start:
+                ch = "S"
+            if p == goal:
+                ch = "G"
+            line += ch
+            x += 1
+
+        brain.print(line)
+        brain.new_line()
+
+        row_count += 1
+        y -= 1
+
+
+    #return back home movement 
+    if start in parent:
+
+        current = goal
+        i = 1
+        while i < len(fastest_back):
+
+            next_cell = fastest_back[i]
+
+            x1, y1 = current
+            x2, y2 = next_cell
+
+            if x2 == x1 and y2 == y1 + 1:
+                d = 0
+            elif x2 == x1 + 1 and y2 == y1:
+                d = 1
+            elif x2 == x1 and y2 == y1 - 1:
+                d = 2
+            else:
+                d = 3
+
+            turn_amount = (d - heading) % 4
+            if turn_amount == 1:
+                drivetrain.turn_for(RIGHT, 90, DEGREES)
+            elif turn_amount == 3:
+                drivetrain.turn_for(LEFT, 90, DEGREES)
+            elif turn_amount == 2:
+                drivetrain.turn_for(RIGHT, 180, DEGREES)
+
+            heading = d
+            drivetrain.drive_for(FORWARD, STEP, MM)
+
+            current = next_cell
+            i += 1
+
+    else:
+        i = len(path) - 1
+        while i >= 0:
+
+            back_dir = (path[i] + 2) % 4
+
+            turn_amount = (back_dir - heading) % 4
+            if turn_amount == 1:
+                drivetrain.turn_for(RIGHT, 90, DEGREES)
+            elif turn_amount == 3:
+                drivetrain.turn_for(LEFT, 90, DEGREES)
+            elif turn_amount == 2:
+                drivetrain.turn_for(RIGHT, 180, DEGREES)
+
+            heading = back_dir
+            drivetrain.drive_for(FORWARD, STEP, MM)
+
+            i -= 1
+
+    drivetrain.stop()
+
+
+vr_thread(main)
+
+        
